@@ -1,0 +1,14 @@
+#if you wanna  see them .. contact me @nowhere ....
+.env
+.env.local
+.env.example
+.env.development.local
+# yo amn its gonna be heavy 
+node_modules/
+# for when i generate logs 
+.log
+logs
+npm-debug.log
+# for now i am using any build tools but will use in future 
+dist/
+build/
