@@ -1,6 +1,8 @@
 const express = require("express");
 const pool = require("./config/db");
 const { name , version } = require('../package.json');
+const { validateSkuParams } = require("./middlewares/validate");
+const skuRepository = require("./repositories/sku.repository");
 
 const app = express();
 
@@ -22,6 +24,21 @@ const checkDatabase = async (req, res) => {
     return res.status(503).json({ status: "DOWN", database: "DOWN" });
   }
 };
+
+app.get('/skus/:id' , validateSkuParams , async (req , res , next)=>{
+ try {
+  const skuId = req.validatedId;
+ const sku = await skuRepository.findById(skuId);
+  if(!sku){
+    const error = new Error('sku not found');
+    error.status = 404;
+    return next(error.message);
+  }
+  res.status(200).json({success : true , data : sku });
+ } catch (error){
+  next(error.message);
+ }
+});
 
 app.get("/ready", checkDatabase);
 app.get("/health", (req, res) => {
