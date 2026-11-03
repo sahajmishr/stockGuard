@@ -1,8 +1,10 @@
 const express = require("express");
 const pool = require("./config/db");
 const { name , version } = require('../package.json');
-const { validateSkuParams } = require("./middlewares/validate");
-const skuRepository = require("./repositories/sku.repository");
+const { validateSkuParams  } = require("./middlewares/validate");
+const {demoAuthMiddleware} = require('./middlewares/auth')
+const skuRepository = require("./repositories/skuRepository");
+const holdService = require("./services/holdService");
 
 const app = express();
 
@@ -38,6 +40,38 @@ app.get('/skus/:id' , validateSkuParams , async (req , res , next)=>{
  } catch (error){
   next(error.message);
  }
+});
+
+app.post("/skus/:id/holds" , demoAuthMiddleware , validateSkuParams , async( req , res , next )=>{
+const owner_id = req.userId ;
+ const sku_id = req.validatedId;
+ const {quantity} = req.body;
+try{
+ if(!Number.isInteger(quantity) || quantity<1){
+  return res.status(400).json({
+    error : 'validation_Error',
+    message : 'quantity should be a whole .. dont try to  be smart '
+  });
+ }
+
+  const updateRecord =  await holdService.createNewHold({sku_id , owner_id , quantity }) ;
+
+if(!updateRecord){
+  const error = new Error ('INTERNAL_SERVER_ERROR');
+  error.status  = 500 ;
+  return next(error.message);
+}
+return res.status(201).json({
+    hold_id : updateRecord.id , 
+    sku_id : sku_id ,
+    quantity : quantity ,
+    expiring_at : updateRecord.expires_at
+    // whatIGot: updateRecord 
+  });
+}catch(error){
+ next(error);
+}
+
 });
 
 app.get("/ready", checkDatabase);
