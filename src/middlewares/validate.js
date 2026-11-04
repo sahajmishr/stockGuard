@@ -1,4 +1,6 @@
 const {app} = require('../app');
+const pool = require('../config/db');
+const { checkSku } = require('../repositories/skuRepository');
 
 const validateSkuParams = (req , res ,next)=>{
     const {id} = req.params ;
@@ -11,4 +13,21 @@ const validateSkuParams = (req , res ,next)=>{
     req.validatedId = parsedId;
     next();
 }
-module.exports ={ validateSkuParams };
+
+const validateSkuId = async (req , res , next)=>{
+    const { id } = req.validatedId ;
+    try{
+        const is_sku = await checkSku(id);
+        if(!is_sku || is_sku.length === 0 ){
+            const error = new Error('SKU NOT FOUND ');
+            error.status = 404 ;
+            throw error ;
+        }
+        next();
+    } catch(error){
+    const statusCode = error.status || 500; 
+    return res.status(statusCode).json({ message: error.message });
+    }
+   
+}
+module.exports ={ validateSkuParams , validateSkuId};

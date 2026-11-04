@@ -1,17 +1,18 @@
-const app = require('../app');
+const app = require("../app");
 
-const demoAuthMiddleware = (req , res , next)=>{
-    const userId = req.headers['x-user-id'];
+const demoAuthMiddleware = (req, res, next) => {
+  const userId = req.headers["x-user-id"];
 
-    if(!userId){
-        return res.status(401).json({
-            error : 'unauthorized',
-            message : 'demo stand-in missing the x-user-id , pass it in it as its just a demo implementation '
-        });
-    }
+  if (!userId) {
+    return res.status(401).json({
+      error: "unauthorized",
+      message:
+        "demo stand-in missing the x-user-id , pass it in it as its just a demo implementation ",
+    });
+  }
 
-    req.userId = userId;
-        next();
-}
+  req.userId = userId;
+  next();
+};
 
-module.exports = {demoAuthMiddleware};
+module.exports = { demoAuthMiddleware };
