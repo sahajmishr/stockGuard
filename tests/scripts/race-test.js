@@ -4,15 +4,15 @@ const pool = require('../../src/config/db');
 const { checkInvariants } = require('../../scripts/check-invariants');
 
 const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:8001';
-const SKU_ID = Number(process.argv[2] || 1);
-const CONCURRENCY = Number(process.argv[3] || 100);
+const SKU_ID = Number(process.argv[2] || 3);
+const CONCURRENCY = Number(process.argv[3] || 10);
 const START_UNITS = Number(process.argv[4] || 1);
 
 async function reset() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('TRUNCATE TABLE orders, holds RESTART IDENTITY CASCADE');
+    await client.query('TRUNCATE TABLE orders, holds , skus RESTART IDENTITY CASCADE');
     await client.query(
       `INSERT INTO skus (total_units, available_units)
        VALUES ($1, $1)

@@ -3,7 +3,7 @@ const skuRepository = require('../repositories/skuRepository');
 
 const DIGITS_ONLY = /^\d+$/;
 
-// :id must be a positive integer made only of digits.
+
 const validateSkuParams = (req, res, next) => {
   const { id } = req.params;
 
@@ -20,7 +20,7 @@ const validateSkuParams = (req, res, next) => {
   return next();
 };
 
-// Runs BEFORE the transaction. Answers "does this SKU exist?", not "is there stock?".
+
 const validateSkuExists = async (req, res, next) => {
   try {
     const sku = await skuRepository.findById(req.validatedId);
@@ -47,4 +47,12 @@ const validateHoldBody = (req, res, next) => {
   return next();
 };
 
-module.exports = { validateSkuParams, validateSkuExists, validateHoldBody };
+const validateIdempotencyHeader = (req , res , next )=>{
+  const idempotencykey = req.headers['x-idempotency-key'];
+  if(!idempotencykey){
+    return res.status(400).json({ erro : ' missing idempotency key '});
+  }
+ return next();
+};
+
+module.exports = { validateSkuParams, validateSkuExists, validateHoldBody , validateIdempotencyHeader };

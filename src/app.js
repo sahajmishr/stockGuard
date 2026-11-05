@@ -5,6 +5,7 @@ const {
   validateSkuParams,
   validateSkuExists,
   validateHoldBody,
+  validateIdempotencyHeader,
 } = require("./middlewares/validate");
 const { demoAuthMiddleware } = require("./middlewares/auth");
 const { errorHandler, httpError } = require("./middlewares/errorHandler");
@@ -46,18 +47,23 @@ app.get("/skus/:id", validateSkuParams, async (req, res, next) => {
 
 app.post(
   "/skus/:id/holds",
+  validateIdempotencyHeader,
   demoAuthMiddleware,
   validateSkuParams,
   validateSkuExists,
   validateHoldBody,
   async (req, res, next) => {
+     const idempotencyKey = req.headers['x-idempotency-key'] || req.headers['idempotency-key'];
+      
     try {
       const hold = await holdService.createNewHold({
         sku_id: req.validatedId,
         owner_id: req.userId,
         quantity: req.body.quantity,
+        idempotencyKey : idempotencyKey,
+        operation : "create_hold"
       });
-
+      //  return res.status(result.code).json(result.body);
       return res.status(201).json({
         hold_id: hold.id,
         sku_id: hold.sku_id,
@@ -65,6 +71,7 @@ app.post(
         state: hold.state,
         created_at: hold.created_at,
         expires_at: hold.expires_at,
+        
       });
     } catch (error) {
       return next(error);
@@ -77,7 +84,7 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "running ", message: "server is live " });
 });
 
-// unknown route -> same error shape as everything else
+
 app.use((req, res, next) => {
   next(httpError(404, "ROUTE_NOT_FOUND", "no such endpoint"));
 });

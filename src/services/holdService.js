@@ -3,42 +3,114 @@ const env = require('../config/env');
 const { httpError } = require('../middlewares/errorHandler');
 const skuRepository = require('../repositories/skuRepository');
 const holdRepository = require('../repositories/holdRepository');
+const idempotencyRepository = require('../repositories/idempotencyRepository');
+const computeCanonicalHash = require('../utils/hash');
 
 const holdService = {
-  async createNewHold({ sku_id, owner_id, quantity }) {
+  async createNewHold({ sku_id, owner_id, quantity, idempotencyKey, operation }) {
     const client = await pool.connect();
-
+    
+   
+    const currentHash = computeCanonicalHash({ quantity });
+    
     try {
       await client.query('BEGIN');
+     
+      const lockKeyString = `${owner_id}:${operation}:${sku_id}:${idempotencyKey}`; 
+      const lockRes = await client.query(
+        `SELECT pg_try_advisory_xact_lock(hashtext($1)) as acquired`, 
+        [lockKeyString]
+      );
+      
+      if (!lockRes.rows[0].acquired) {
+        await client.query('ROLLBACK');
+       
+        throw httpError(409, "Request in progress, please retry.", "REQUEST_IN_PROGRESS");
+      }
+      
+      const storedRecord = await idempotencyRepository.checkIdempotencyRecord(
+        { owner_id, operation, idempotencykey: idempotencyKey }, 
+        client
+      );
 
+      if (storedRecord && storedRecord.length > 0) {
+        if (storedRecord.request_hash === currentHash) {
+          await client.query('ROLLBACK');
+          console.log(`[idempotency_replay] key : ${idempotencyKey}`);
+          
+          
+          return { isReplay: true, code: storedRecord.response_code, body: storedRecord.response_body };
+        } else {
+          await client.query('ROLLBACK');
+          throw httpError(409, "This key has already been consumed with a different request payload.", "IDEMPOTENCY_KEY_REUSE_VIOLATION");
+        }
+      }
+      
+     
       const updated = await skuRepository.decrementStock({ sku_id, quantity }, client);
 
       if (!updated) {
-        // throw, don't rollback here — the catch block is the only rollback site
-        throw httpError(409, 'INSUFFICIENT_STOCK', 'not enough stock for this sku');
+        const errorResponseStatus = 409;
+        const errorResponseBody = {
+          code: 'INSUFFICIENT_STOCK',
+          error: 'Not enough stock for this SKU.'
+        };
+        
+        
+        await idempotencyRepository.createIdempotencyErrorRow({
+          actorId: owner_id,
+          operation,
+          idempotencyKey,
+          currentHash,
+          errorResponseStatus,
+          errorResponseBody
+        }, client);
+        
+        await client.query("COMMIT"); 
+        throw httpError(errorResponseStatus, errorResponseBody.error, errorResponseBody.code);
       }
 
+    
       const hold = await holdRepository.createHold(
         { sku_id, owner_id, quantity, ttlMinutes: env.holdTtlMinutes },
-        client,
+        client
       );
+      
+      const successResponseStatus = 201;
+      const successResponseBody = {
+        
+        hold_id: hold.hold_id || hold.id,
+        sku_id: hold.sku_id,
+        quantity: hold.quantity,
+        state: hold.state,
+        created_at: hold.created_at,
+        expires_at: hold.expires_at
+      };
+      
+      
+      await idempotencyRepository.createIdempotencySuccessRow({
+        actorId: owner_id,
+        operation,
+        idempotencyKey,
+        currentHash,
+        successResponseStatus,
+        successResponseBody
+      }, client);
 
       await client.query('COMMIT');
-      return hold;
+      
+      return { isReplay: false, code: successResponseStatus, body: successResponseBody };
     } catch (err) {
       try {
         await client.query('ROLLBACK');
       } catch (rollbackErr) {
-        // never let a rollback failure hide the real error
-        console.error(
-          JSON.stringify({ level: 'error', msg: 'rollback failed', error: rollbackErr.message }),
-        );
+        console.error(JSON.stringify({ level: 'error', msg: 'rollback failed', error: rollbackErr.message }));
       }
       throw err;
     } finally {
       client.release();
     }
-  },
+  }
 };
 
 module.exports = holdService;
