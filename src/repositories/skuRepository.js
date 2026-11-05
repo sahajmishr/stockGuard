@@ -22,6 +22,14 @@ const skuRepository = {
     );
     return rows[0] ?? null;
   },
+
+  async incrementSku( {sku_id , quantity} , client = pool){
+    await client.query(`
+      UPDATE skus SET avialable_units = avaialable_units + $1 WHERE sku_id = $2
+      `
+      [quantity , sku_id]
+    );
+  }
 };
 
 module.exports = skuRepository;

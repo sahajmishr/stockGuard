@@ -11,6 +11,8 @@ const { demoAuthMiddleware } = require("./middlewares/auth");
 const { errorHandler, httpError } = require("./middlewares/errorHandler");
 const skuRepository = require("./repositories/skuRepository");
 const holdService = require("./services/holdService");
+const holdStateService = require("./services/holdStateService");
+
 
 const app = express();
 
@@ -78,6 +80,42 @@ app.post(
     }
   },
 );
+
+
+
+app.post('/holds/:id/confirm' ,
+   demoAuthMiddleware , async (req , res , next)=>{
+    try{
+       const result = await holdStateService.confirmHold({
+        hold_id : req.params.id,
+        user_id : req.userId
+      }
+      );
+      return res.status(result.status).json(result.body);
+    }catch(error){
+      return next(error);
+
+    }
+
+   }
+
+  );
+
+
+
+
+app.post('/holds/:id/cancel', demoAuthMiddleware, async (req, res, next) => {
+  try {
+    const result = await holdStateService.cancelHold({
+      hold_id: req.params.id,
+      user_id: req.userId
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 
 app.get("/ready", checkDatabase);
 app.get("/health", (req, res) => {

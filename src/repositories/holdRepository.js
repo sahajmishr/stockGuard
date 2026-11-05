@@ -10,6 +10,39 @@ const holdRepository = {
     );
     return rows[0];
   },
+
+  async confirmHoldRepo({hold_id , user_id} , client =pool){
+      return await client.query(`
+      UPDATE holds SET state = 'confirmed'
+      WHERE id = $1 AND
+      owner_id = $2 AND
+      state = 'active' AND 
+       expires_at > NOW() 
+       RETURNING id , sku_id , quantity , state ` ,
+      [hold_id , user_id]);
+  },
+
+  async diagnoseHold(hold_id , client= pool){
+   return await client.query(`
+    SELECT owner_id , state FROM holds WHERE id = $1
+    `,[hold_id]);
+
+  }, 
+   
+  async cancelHold({hold_id , user_id} , client = pool ){
+ return await client.query(
+        `UPDATE holds 
+         SET state = 'cancelled' 
+         WHERE id = $1 
+           AND actor_id = $2 
+           AND state = 'active'
+         RETURNING id, sku_id, quantity`,
+        [hold_id, user_id]
+      );
+
+  },
+  
+
 };
 
 module.exports = holdRepository;
