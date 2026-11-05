@@ -11,12 +11,12 @@ const holdService = {
     const client = await pool.connect();
     
    
-    const currentHash = computeCanonicalHash({ quantity });
+    const currentHash = computeCanonicalHash({ sku_id , quantity });
     
     try {
       await client.query('BEGIN');
      
-      const lockKeyString = `${owner_id}:${operation}:${sku_id}:${idempotencyKey}`; 
+      const lockKeyString = `${owner_id}:${operation}:${idempotencyKey}`;
       const lockRes = await client.query(
         `SELECT pg_try_advisory_xact_lock(hashtext($1)) as acquired`, 
         [lockKeyString]
@@ -33,18 +33,15 @@ const holdService = {
         client
       );
 
-      if (storedRecord && storedRecord.length > 0) {
-        if (storedRecord.request_hash === currentHash) {
-          await client.query('ROLLBACK');
-          console.log(`[idempotency_replay] key : ${idempotencyKey}`);
-          
-          
-          return { isReplay: true, code: storedRecord.response_code, body: storedRecord.response_body };
-        } else {
-          await client.query('ROLLBACK');
-          throw httpError(409, "This key has already been consumed with a different request payload.", "IDEMPOTENCY_KEY_REUSE_VIOLATION");
-        }
-      }
+     if (storedRecord) {
+  if (storedRecord.request_hash === currentHash) {
+    await client.query('ROLLBACK');
+    return { isReplay: true, code: storedRecord.response_code, body: storedRecord.response_body };
+  }
+  await client.query('ROLLBACK');
+  throw httpError(409, 'IDEMPOTENCY_KEY_REUSE_VIOLATION',
+    'this key was already used with a different payload');
+}
       
      
       const updated = await skuRepository.decrementStock({ sku_id, quantity }, client);
@@ -52,8 +49,8 @@ const holdService = {
       if (!updated) {
         const errorResponseStatus = 409;
         const errorResponseBody = {
-          code: 'INSUFFICIENT_STOCK',
-          error: 'Not enough stock for this SKU.'
+          // code: 'INSUFFICIENT_STOCK',
+          error: 'INSUFFICIENT_STOCK'
         };
         
         
@@ -67,7 +64,7 @@ const holdService = {
         }, client);
         
         await client.query("COMMIT"); 
-        throw httpError(errorResponseStatus, errorResponseBody.error, errorResponseBody.code);
+        return { isReplay: false, code: errorResponseStatus, body: errorResponseBody } ;
       }
 
     

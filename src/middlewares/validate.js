@@ -50,8 +50,10 @@ const validateHoldBody = (req, res, next) => {
 const validateIdempotencyHeader = (req , res , next )=>{
   const idempotencykey = req.headers['x-idempotency-key'];
   if(!idempotencykey){
-    return res.status(400).json({ erro : ' missing idempotency key '});
+    return next(httpError(400 , 'MISSING IDEMPOTENCY KEY ' , 'provide it yrr '))
+    return res.status(400).json({ httpError : ' missing idempotency key '});
   }
+  req.idempotencyKey = idempotencykey ;
  return next();
 };
 

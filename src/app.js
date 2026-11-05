@@ -56,23 +56,23 @@ app.post(
      const idempotencyKey = req.headers['x-idempotency-key'] || req.headers['idempotency-key'];
       
     try {
-      const hold = await holdService.createNewHold({
+      const result = await holdService.createNewHold({
         sku_id: req.validatedId,
         owner_id: req.userId,
         quantity: req.body.quantity,
         idempotencyKey : idempotencyKey,
         operation : "create_hold"
       });
-      //  return res.status(result.code).json(result.body);
-      return res.status(201).json({
-        hold_id: hold.id,
-        sku_id: hold.sku_id,
-        quantity: hold.quantity,
-        state: hold.state,
-        created_at: hold.created_at,
-        expires_at: hold.expires_at,
+       return res.status(result.code).json(result.body);
+      // return res.status(201).json({
+      //   hold_id: hold.id,
+      //   sku_id: hold.sku_id,
+      //   quantity: hold.quantity,
+      //   state: hold.state,
+      //   created_at: hold.created_at,
+      //   expires_at: hold.expires_at,
         
-      });
+      // });
     } catch (error) {
       return next(error);
     }

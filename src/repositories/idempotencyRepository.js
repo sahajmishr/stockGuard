@@ -1,11 +1,14 @@
 const pool = require('../config/db');
 
-const checkIdempotencyRecord =  async({owner_id , operation , idempotencykey } , client = pool)=>{
-   return await client.query(`SELECT request_hash , response_code , response_body FROM idempotency_keys WHERE actor_id = $1 AND operation = $2 AND idempotency_key = $3`, [owner_id , operation , idempotencykey]);
-
-  
-
-}
+const checkIdempotencyRecord = async ({ owner_id, operation, idempotencykey }, client = pool) => {
+  const {rows}  = await client.query(
+    `SELECT request_hash, response_code, response_body
+       FROM idempotency_keys
+      WHERE actor_id = $1 AND operation = $2 AND idempotency_key = $3`,
+    [owner_id, operation, idempotencykey],
+  );
+  return rows[0] ?? null;
+};
 
 const createIdempotencyErrorRow =  async({actorId , operation , idempotencyKey , currentHash , errorResponseStatus , errorResponseBody} , client = pool)=>{
     await client.query(
