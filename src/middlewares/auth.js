@@ -2,6 +2,7 @@ const app = require("../app");
 
 const demoAuthMiddleware = (req, res, next) => {
   const userId = req.headers["x-user-id"];
+  console.log(userId);
 
   if (!userId) {
     return res.status(401).json({

@@ -38,7 +38,7 @@ const holdService = {
       if (error.message !== "INSUFFICIENT_STOCK") {
         await client.query("ROLLBACK");
       }
-      throw error.message;
+      throw error ;
     } finally {
       client.release();
     }

@@ -46,7 +46,7 @@ app.get("/skus/:id", validateSkuParams, async (req, res, next) => {
 app.post(
   "/skus/:id/holds",
   demoAuthMiddleware ,
-  validateSkuParams, validateSkuId , 
+  validateSkuParams,  
   async (req, res, next) => {
     const owner_id = req.userId;
     const sku_id = req.validatedId;
