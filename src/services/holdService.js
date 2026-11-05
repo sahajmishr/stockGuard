@@ -1,44 +1,40 @@
-const pool = require("../config/db");
-const skuRepository = require("../repositories/skuRepository");
-const holdRepository = require("../repositories/holdRepository");
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../../.env") });
+const pool = require('../config/db');
+const env = require('../config/env');
+const { httpError } = require('../middlewares/errorHandler');
+const skuRepository = require('../repositories/skuRepository');
+const holdRepository = require('../repositories/holdRepository');
 
 const holdService = {
   async createNewHold({ sku_id, owner_id, quantity }) {
-    const holdTtlMinutes = process.env.HOLD_TTL_MINUTES || "5";
-    const interval = `${holdTtlMinutes} minutes `;
-
     const client = await pool.connect();
 
     try {
-      await client.query("BEGIN");
+      await client.query('BEGIN');
 
-      const updateRows = await skuRepository.decrementStock(
-        { sku_id, quantity },
+      const updated = await skuRepository.decrementStock({ sku_id, quantity }, client);
+
+      if (!updated) {
+        // throw, don't rollback here — the catch block is the only rollback site
+        throw httpError(409, 'INSUFFICIENT_STOCK', 'not enough stock for this sku');
+      }
+
+      const hold = await holdRepository.createHold(
+        { sku_id, owner_id, quantity, ttlMinutes: env.holdTtlMinutes },
         client,
       );
 
-      if (updateRows.length === 0) {
-        await client.query("ROLLBACK");
-        const error = new Error("INSUFFICIENT_STOCK");
-        error.status = 409;
-        throw error;
+      await client.query('COMMIT');
+      return hold;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        // never let a rollback failure hide the real error
+        console.error(
+          JSON.stringify({ level: 'error', msg: 'rollback failed', error: rollbackErr.message }),
+        );
       }
-
-      const holdRecord = await holdRepository.createHold(
-        { sku_id, owner_id, quantity, interval },
-        client,
-      );
-
-      await client.query("COMMIT");
-
-      return holdRecord;
-    } catch (error) {
-      if (error.message !== "INSUFFICIENT_STOCK") {
-        await client.query("ROLLBACK");
-      }
-      throw error ;
+      throw err;
     } finally {
       client.release();
     }

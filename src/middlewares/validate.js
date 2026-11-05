@@ -1,32 +1,50 @@
-const { app } = require("../app");
-const pool = require("../config/db");
-const { checkSku } = require("../repositories/skuRepository");
+const { httpError } = require('./errorHandler');
+const skuRepository = require('../repositories/skuRepository');
 
+const DIGITS_ONLY = /^\d+$/;
+
+// :id must be a positive integer made only of digits.
 const validateSkuParams = (req, res, next) => {
   const { id } = req.params;
 
-  const parsedId = parseInt(id, 10);
-
-  if (isNaN(parsedId) || parsedId <= 0) {
-    res.status(400).json({ message: " tum chor ho " });
+  if (!DIGITS_ONLY.test(id)) {
+    return next(httpError(400, 'INVALID_SKU_ID', 'sku id must be a positive integer'));
   }
+
+  const parsedId = Number(id);
+  if (!Number.isSafeInteger(parsedId) || parsedId <= 0) {
+    return next(httpError(400, 'INVALID_SKU_ID', 'sku id must be a positive integer'));
+  }
+
   req.validatedId = parsedId;
-  next();
+  return next();
 };
 
-const validateSkuId = async (req, res, next) => {
-  const { id } = req.validatedId;
+// Runs BEFORE the transaction. Answers "does this SKU exist?", not "is there stock?".
+const validateSkuExists = async (req, res, next) => {
   try {
-    const is_sku = await checkSku(id);
-    if (!is_sku || is_sku.length === 0) {
-      const error = new Error("SKU NOT FOUND ");
-      error.status = 404;
-      throw error;
-    }
-    next();
-  } catch (error) {
-    const statusCode = error.status || 500;
-    return res.status(statusCode).json({ message: error.message });
+    const sku = await skuRepository.findById(req.validatedId);
+    if (!sku) return next(httpError(404, 'SKU_NOT_FOUND', 'no such sku'));
+    req.sku = sku;
+    return next();
+  } catch (err) {
+    return next(err);
   }
 };
-module.exports = { validateSkuParams, validateSkuId };
+
+const MAX_QUANTITY = 1000;
+
+const validateHoldBody = (req, res, next) => {
+  const { quantity } = req.body ?? {};
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return next(httpError(400, 'INVALID_QUANTITY', 'quantity must be a whole number >= 1'));
+  }
+  if (quantity > MAX_QUANTITY) {
+    return next(httpError(400, 'INVALID_QUANTITY', `quantity must be <= ${MAX_QUANTITY}`));
+  }
+
+  return next();
+};
+
+module.exports = { validateSkuParams, validateSkuExists, validateHoldBody };

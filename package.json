@@ -1,14 +1,19 @@
 {
   "name": "stockguard",
   "version": "1.0.0",
-  "description": "",
+  "private" : true ,
+  "description": "StockGuard - concurrency-safe inventory reservation API",
   "license": "ISC",
   "author": "",
   "type": "commonjs",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server"
+     "start": "node server.js",
+    "dev": "node --watch server.js",
+    "migrate": "node scripts/migrate.js",
+    "check": "node scripts/check-invariants.js",
+    "race": "node tests/scripts/race-test.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@types/express": "^5.0.6",

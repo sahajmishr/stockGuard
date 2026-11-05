@@ -1,28 +1,24 @@
-const{ Pool} = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+const { Pool } = require('pg');
+const env = require('./env');
 
 const pool = new Pool({
- user : process.env.DB_USER,
- host : process.env.DB_HOST,
- database : process.env.DB_NAME,
- password : process.env.DB_PASSWORD,
- port : process.env.DB_PORT,
- max:20,
- idleTimeoutMillis : 30000,
- connectionTimeoutMillis : 20000,
+  host: env.db.host,
+  port: env.db.port,
+  user: env.db.user,
+  password: env.db.password,
+  database: env.db.database,
+  max: env.db.poolMax,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+  statement_timeout: env.statementTimeoutMs,
+  query_timeout: env.statementTimeoutMs,
+  application_name: 'stockGuard-api',
 });
 
-// pool.on('connect' , async (client)=>{
-//    await client.query('SET statement_timeout = 5000;').catch(err=> console.error('Error setting statement_timeout' , err));
-// });
-
-   pool.query('select now()' ,  (err , res)=>{
-    if(err){
-        console.log("db connection error" , err);
-    } else {
-        console.log('db connection successfull');
-    }
+pool.on('error', (err) => {
+  console.error(
+    JSON.stringify({ level: 'error', msg: 'idle pg client error', error: err.message }),
+  );
 });
 
-module.exports = pool ;
+module.exports = pool;

@@ -1,17 +1,22 @@
 const express = require("express");
 const pool = require("./config/db");
 const { name, version } = require("../package.json");
-const { validateSkuParams, validateSkuId } = require("./middlewares/validate");
+const {
+  validateSkuParams,
+  validateSkuExists,
+  validateHoldBody,
+} = require("./middlewares/validate");
 const { demoAuthMiddleware } = require("./middlewares/auth");
+const { errorHandler, httpError } = require("./middlewares/errorHandler");
 const skuRepository = require("./repositories/skuRepository");
 const holdService = require("./services/holdService");
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
 
 app.get("/", (req, res) => {
-  console.log(req.ip);
+  // console.log(req.ip);
   res.status(200).json({
     name,
     version,
@@ -23,7 +28,7 @@ const checkDatabase = async (req, res) => {
     await pool.query("SELECT 1");
     return res.status(200).json({ status: "UP", database: "UP" });
   } catch (error) {
-    console.error("database check failed:", error.message);
+    console.error(JSON.stringify({ level: "warn", msg: "readiness check failed", error: error.message }));
     return res.status(503).json({ status: "DOWN", database: "DOWN" });
   }
 };
@@ -32,54 +37,37 @@ app.get("/skus/:id", validateSkuParams, async (req, res, next) => {
   try {
     const skuId = req.validatedId;
     const sku = await skuRepository.findById(skuId);
-    if (!sku) {
-      const error = new Error("sku not found");
-      error.status = 404;
-      return next(error.message);
-    }
-    res.status(200).json({ success: true, data: sku });
+    if (!sku) return next(httpError(404, "SKU_NOT_FOUND", "no such sku"));
+    return res.status(200).json({ success: true, data: sku });
   } catch (error) {
-    next(error.message);
+    return next(error);
   }
 });
 
 app.post(
   "/skus/:id/holds",
-  demoAuthMiddleware ,
-  validateSkuParams,  
+  demoAuthMiddleware,
+  validateSkuParams,
+  validateSkuExists,
+  validateHoldBody,
   async (req, res, next) => {
-    const owner_id = req.userId;
-    const sku_id = req.validatedId;
-    const { quantity } = req.body;
-   
     try {
-      if (!Number.isInteger(quantity) || quantity < 1) {
-        return res.status(400).json({
-          error: "validation_Error",
-          message: "quantity should be a whole .. dont try to  be smart ",
-        });
-      }
-
-      const updateRecord = await holdService.createNewHold({
-        sku_id,
-        owner_id,
-        quantity,
+      const hold = await holdService.createNewHold({
+        sku_id: req.validatedId,
+        owner_id: req.userId,
+        quantity: req.body.quantity,
       });
 
-      if (!updateRecord) {
-        const error = new Error("INTERNAL_SERVER_ERROR");
-        error.status = 500;
-        return next(error.message);
-      }
       return res.status(201).json({
-        hold_id: updateRecord.id,
-        sku_id: sku_id,
-        quantity: quantity,
-        expiring_at: updateRecord.expires_at,
-        // whatIGot: updateRecord
+        hold_id: hold.id,
+        sku_id: hold.sku_id,
+        quantity: hold.quantity,
+        state: hold.state,
+        created_at: hold.created_at,
+        expires_at: hold.expires_at,
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   },
 );
@@ -88,5 +76,13 @@ app.get("/ready", checkDatabase);
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "running ", message: "server is live " });
 });
+
+// unknown route -> same error shape as everything else
+app.use((req, res, next) => {
+  next(httpError(404, "ROUTE_NOT_FOUND", "no such endpoint"));
+});
+
+// MUST be last. MUST have 4 params, or Express won't recognise it as an error handler.
+app.use(errorHandler);
 
 module.exports = app;

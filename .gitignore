@@ -1,7 +1,7 @@
 #if you wanna  see them .. contact me @nowhere ....
 .env
 .env.local
-.env.example
+
 .env.development.local
 # yo amn its gonna be heavy 
 node_modules/
