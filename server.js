@@ -1,9 +1,10 @@
-const env = require('./src/config/env'); // loads + validates .env. MUST be first.
+const env = require('./src/config/env');
 const app = require('./src/app');
 const pool = require('./src/config/db');
+const { logger } = require('./src/config/logger');
 
 const server = app.listen(env.port, () => {
-  console.log(JSON.stringify({ level: 'info', msg: `api listening on ${env.port}` }));
+  logger.info('api listening', { port: env.port, instanceId: env.instanceId });
 });
 
 let shuttingDown = false;
@@ -11,33 +12,34 @@ let shuttingDown = false;
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(JSON.stringify({ level: 'info', msg: `${signal} received, shutting down` }));
+  logger.info('shutdown initiated', { signal });
 
   const force = setTimeout(() => {
-    console.error(JSON.stringify({ level: 'error', msg: 'forced exit after 10s' }));
+    logger.error('forced exit after 10s');
     process.exit(1);
-  }, 10_000);
+  }, 10000);
   force.unref();
 
   server.close(async () => {
     try {
       await pool.end();
-      console.log(JSON.stringify({ level: 'info', msg: 'shutdown complete' }));
+      logger.info('shutdown complete');
       process.exit(0);
     } catch (err) {
-      console.error(JSON.stringify({ level: 'error', msg: 'pool close failed', error: err.message }));
+      logger.error('pool close failed', { error: err.message });
       process.exit(1);
     }
   });
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));   // Ctrl+C — what you actually use on Windows
+process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('unhandledRejection', (reason) => {
-  console.error(JSON.stringify({ level: 'error', msg: 'unhandledRejection', reason: String(reason) }));
+  logger.error('unhandledRejection', { reason: String(reason) });
 });
+
 process.on('uncaughtException', (err) => {
-  console.error(JSON.stringify({ level: 'error', msg: 'uncaughtException', error: err.message, stack: err.stack }));
+  logger.error('uncaughtException', { error: err.message, stack: err.stack });
   shutdown('uncaughtException');
 });

@@ -1,0 +1,55 @@
+groups:
+  - name: stockguard
+    rules:
+      - alert: OutboxBacklogGrowing
+        expr: stockguard_outbox_backlog > 50
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox backlog above 50 for 2 minutes"
+          description: "Events are queued faster than the relay delivers them. Check the relay logs and the consumer health."
+
+      - alert: OutboxDeadLetters
+        expr: increase(stockguard_relay_dead_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "An event exhausted its delivery attempts"
+          description: "Inspect GET /admin/outbox, fix the consumer, then POST /admin/outbox/{id}/replay."
+
+      - alert: ExpiryLagHigh
+        expr: histogram_quantile(0.95, sum(rate(stockguard_expiry_lag_seconds_bucket[5m])) by (le)) > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Holds are being expired more than 60 seconds late"
+          description: "Units stay locked longer than the TTL promises. Check the reaper process and its batch size."
+
+      - alert: ServerErrors
+        expr: sum(rate(stockguard_http_requests_total{status=~"5.."}[2m])) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The API is returning 5xx responses"
+          description: "A business outcome must never be a 500. Check the error logs by request id."
+
+      - alert: PoolExhausted
+        expr: stockguard_db_pool_clients{state="waiting"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Requests are queueing for a database connection"
+          description: "Either the pool is too small or queries are too slow. Compare with the request latency."
+
+      - alert: RelayNotDelivering
+        expr: increase(stockguard_relay_delivered_total[5m]) == 0 and stockguard_outbox_backlog > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Events are queued but nothing is being delivered"
+          description: "The relay process is probably down."

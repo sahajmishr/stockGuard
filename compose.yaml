@@ -1,0 +1,205 @@
+name: stockguard
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-stockguard}
+    ports:
+      - "5433:5432"
+    volumes:
+      - stockguard-pgdata:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - max_connections=120
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-stockguard}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  migrate:
+    build: .
+    command: sh -c "node scripts/migrate.js && node scripts/seed.js"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-stockguard}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api1:
+    build: .
+    environment: &api-env
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-stockguard}
+      DB_POOL_MAX: "10"
+      HOLD_TTL_MINUTES: "5"
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      CONSUMER_URL: http://consumer:4001/events
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 384M
+
+  api2:
+    build: .
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-docker-2
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8002:8001"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 384M
+
+  reaper:
+    build: .
+    command: node src/worker/reaper.js
+    environment:
+      <<: *api-env
+      SERVICE_NAME: stockguard-reaper
+      REAPER_BATCH_SIZE: "100"
+      REAPER_INTERVAL_MS: "1000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 192M
+
+  relay:
+    build: .
+    command: node src/worker/relay.js
+    environment:
+      <<: *api-env
+      SERVICE_NAME: stockguard-relay
+      RELAY_BATCH_SIZE: "20"
+      RELAY_LEASE_SECONDS: "30"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 192M
+
+  consumer:
+    build: .
+    command: node src/consumer/server.js
+    environment:
+      <<: *api-env
+      SERVICE_NAME: stockguard-consumer
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 192M
+
+  proxy:
+    build: .
+    command: node proxy/server.js
+    environment:
+      PROXY_PORT: "8080"
+      API_UPSTREAMS: http://api1:8001,http://api2:8001
+    ports:
+      - "8080:8080"
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["monitoring"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+volumes:
+  stockguard-pgdata:

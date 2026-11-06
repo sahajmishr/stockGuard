@@ -1,16 +1,21 @@
 const pool = require('../config/db');
 
 const skuRepository = {
-  async findById(id) {
-    const { rows } = await pool.query(
+  async findById(id, client = pool) {
+    const { rows } = await client.query(
       'SELECT id, total_units, available_units FROM skus WHERE id = $1',
       [id],
     );
     return rows[0] ?? null;
   },
 
-  // The heart of the project. Condition and write in ONE statement.
-  // Returns the updated row, or null when there was not enough stock.
+  async findAll(client = pool) {
+    const { rows } = await client.query(
+      'SELECT id, total_units, available_units FROM skus ORDER BY id',
+    );
+    return rows;
+  },
+
   async decrementStock({ sku_id, quantity }, client = pool) {
     const { rows } = await client.query(
       `UPDATE skus
@@ -23,13 +28,16 @@ const skuRepository = {
     return rows[0] ?? null;
   },
 
-  async incrementSku( {sku_id , quantity} , client = pool){
-    await client.query(`
-      UPDATE skus SET avialable_units = avaialable_units + $1 WHERE sku_id = $2
-      `
-      [quantity , sku_id]
+  async incrementSku({ sku_id, quantity }, client = pool) {
+    const { rows } = await client.query(
+      `UPDATE skus
+          SET available_units = available_units + $1
+        WHERE id = $2
+      RETURNING id, total_units, available_units`,
+      [quantity, sku_id],
     );
-  }
+    return rows[0] ?? null;
+  },
 };
 
 module.exports = skuRepository;

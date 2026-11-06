@@ -1,10 +1,12 @@
+const { randomUUID } = require('crypto');
 const { httpError } = require('./errorHandler');
 const skuRepository = require('../repositories/skuRepository');
 
 const DIGITS_ONLY = /^\d+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_.:-]{1,255}$/;
 
-
-const validateSkuParams = (req, res, next) => {
+function validateSkuParams(req, res, next) {
   const { id } = req.params;
 
   if (!DIGITS_ONLY.test(id)) {
@@ -18,10 +20,31 @@ const validateSkuParams = (req, res, next) => {
 
   req.validatedId = parsedId;
   return next();
-};
+}
 
+function validateHoldId(req, res, next) {
+  const { id } = req.params;
 
-const validateSkuExists = async (req, res, next) => {
+  if (!UUID_RE.test(id)) {
+    return next(httpError(400, 'INVALID_HOLD_ID', 'hold id must be a uuid'));
+  }
+
+  req.holdId = id;
+  return next();
+}
+
+function validateOutboxId(req, res, next) {
+  const { id } = req.params;
+
+  if (!UUID_RE.test(id)) {
+    return next(httpError(400, 'INVALID_EVENT_ID', 'event id must be a uuid'));
+  }
+
+  req.eventId = id;
+  return next();
+}
+
+async function validateSkuExists(req, res, next) {
   try {
     const sku = await skuRepository.findById(req.validatedId);
     if (!sku) return next(httpError(404, 'SKU_NOT_FOUND', 'no such sku'));
@@ -30,11 +53,11 @@ const validateSkuExists = async (req, res, next) => {
   } catch (err) {
     return next(err);
   }
-};
+}
 
 const MAX_QUANTITY = 1000;
 
-const validateHoldBody = (req, res, next) => {
+function validateHoldBody(req, res, next) {
   const { quantity } = req.body ?? {};
 
   if (!Number.isInteger(quantity) || quantity < 1) {
@@ -45,16 +68,41 @@ const validateHoldBody = (req, res, next) => {
   }
 
   return next();
-};
+}
 
-const validateIdempotencyHeader = (req , res , next )=>{
-  const idempotencykey = req.headers['x-idempotency-key'];
-  if(!idempotencykey){
-    return next(httpError(400 , 'MISSING IDEMPOTENCY KEY ' , 'provide it yrr '))
-    return res.status(400).json({ httpError : ' missing idempotency key '});
+function validateIdempotencyHeader(req, res, next) {
+  const key = req.headers['x-idempotency-key'] || req.headers['idempotency-key'];
+
+  if (!key) {
+    return next(httpError(400, 'MISSING_IDEMPOTENCY_KEY', 'x-idempotency-key header is required'));
   }
-  req.idempotencyKey = idempotencykey ;
- return next();
-};
+  if (!IDEMPOTENCY_KEY_RE.test(key)) {
+    return next(
+      httpError(400, 'INVALID_IDEMPOTENCY_KEY', 'idempotency key must be 1-255 chars of A-Za-z0-9_.:-'),
+    );
+  }
 
-module.exports = { validateSkuParams, validateSkuExists, validateHoldBody , validateIdempotencyHeader };
+  req.idempotencyKey = key;
+  return next();
+}
+
+function requestIdMiddleware(req, res, next) {
+  const incoming = req.headers['x-request-id'];
+  req.id = typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 128
+    ? incoming
+    : randomUUID();
+  res.setHeader('x-request-id', req.id);
+  return next();
+}
+
+module.exports = {
+  validateSkuParams,
+  validateSkuExists,
+  validateHoldBody,
+  validateHoldId,
+  validateOutboxId,
+  validateIdempotencyHeader,
+  requestIdMiddleware,
+  UUID_RE,
+  IDEMPOTENCY_KEY_RE,
+};

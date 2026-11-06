@@ -1,0 +1,74 @@
+{
+  "title": "StockGuard",
+  "uid": "stockguard",
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Requests per second by route and status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (route, status) (rate(stockguard_http_requests_total[1m]))",
+          "legendFormat": "{{route}} {{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Hold outcomes per second",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(stockguard_holds_created_total[1m]))", "legendFormat": "created" },
+        { "expr": "sum(rate(stockguard_holds_confirmed_total[1m]))", "legendFormat": "confirmed" },
+        { "expr": "sum(rate(stockguard_holds_cancelled_total[1m]))", "legendFormat": "cancelled" },
+        { "expr": "sum(rate(stockguard_holds_expired_total[1m]))", "legendFormat": "expired" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request latency p95 and p99",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox backlog and relay outcomes",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "sum(stockguard_outbox_backlog)", "legendFormat": "backlog" },
+        { "expr": "sum(rate(stockguard_relay_delivered_total[1m]))", "legendFormat": "delivered/s" },
+        { "expr": "sum(rate(stockguard_relay_failed_total[1m]))", "legendFormat": "failed/s" },
+        { "expr": "sum(stockguard_relay_dead_total)", "legendFormat": "dead total" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reaper batch size and expiry lag p95",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "avg(stockguard_reaper_batch_size_sum) / avg(stockguard_reaper_batch_size_count)", "legendFormat": "avg batch" },
+        { "expr": "histogram_quantile(0.95, sum(rate(stockguard_expiry_lag_seconds_bucket[5m])) by (le))", "legendFormat": "lag p95 s" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Database pool",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "sum by (state) (stockguard_db_pool_clients)", "legendFormat": "{{state}}" }
+      ]
+    }
+  ]
+}

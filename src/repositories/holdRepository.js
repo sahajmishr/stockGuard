@@ -11,38 +11,81 @@ const holdRepository = {
     return rows[0];
   },
 
-  async confirmHoldRepo({hold_id , user_id} , client =pool){
-      return await client.query(`
-      UPDATE holds SET state = 'confirmed'
-      WHERE id = $1 AND
-      owner_id = $2 AND
-      state = 'active' AND 
-       expires_at > NOW() 
-       RETURNING id , sku_id , quantity , state ` ,
-      [hold_id , user_id]);
+  async findById(hold_id, client = pool) {
+    const { rows } = await client.query(
+      `SELECT id, sku_id, owner_id, quantity, state, created_at, expires_at
+         FROM holds WHERE id = $1`,
+      [hold_id],
+    );
+    return rows[0] ?? null;
   },
 
-  async diagnoseHold(hold_id , client= pool){
-   return await client.query(`
-    SELECT owner_id , state FROM holds WHERE id = $1
-    `,[hold_id]);
-
-  }, 
-   
-  async cancelHold({hold_id , user_id} , client = pool ){
- return await client.query(
-        `UPDATE holds 
-         SET state = 'cancelled' 
-         WHERE id = $1 
-           AND actor_id = $2 
-           AND state = 'active'
-         RETURNING id, sku_id, quantity`,
-        [hold_id, user_id]
-      );
-
+  async confirmHoldRepo({ hold_id, user_id }, client = pool) {
+    const { rows } = await client.query(
+      `UPDATE holds
+          SET state = 'confirmed', updated_at = now()
+        WHERE id = $1
+          AND owner_id = $2
+          AND state = 'active'
+          AND expires_at > now()
+      RETURNING id, sku_id, quantity, owner_id, state`,
+      [hold_id, user_id],
+    );
+    return rows;
   },
-  
 
+  async cancelHold({ hold_id, user_id }, client = pool) {
+    const { rows } = await client.query(
+      `UPDATE holds
+          SET state = 'cancelled', updated_at = now()
+        WHERE id = $1
+          AND owner_id = $2
+          AND state = 'active'
+      RETURNING id, sku_id, quantity, owner_id, state`,
+      [hold_id, user_id],
+    );
+    return rows;
+  },
+
+  async diagnoseHold(hold_id, client = pool) {
+    const { rows } = await client.query(
+      'SELECT owner_id, state, expires_at FROM holds WHERE id = $1',
+      [hold_id],
+    );
+    return rows;
+  },
+
+  async claimExpiredBatch({ batchSize }, client = pool) {
+    const { rows } = await client.query(
+      `UPDATE holds
+          SET state = 'expired', updated_at = now()
+        WHERE id IN (
+          SELECT id FROM holds
+           WHERE state = 'active' AND expires_at <= now()
+           ORDER BY expires_at
+           LIMIT $1
+           FOR UPDATE SKIP LOCKED
+        )
+        RETURNING id, sku_id, quantity, owner_id,
+                  EXTRACT(EPOCH FROM (now() - expires_at))::float8 AS lag_seconds`,
+      [batchSize],
+    );
+    return rows;
+  },
+
+  async countByState(client = pool) {
+    const { rows } = await client.query(
+      'SELECT state, count(*)::int AS count FROM holds GROUP BY state ORDER BY state',
+    );
+    return rows;
+  },
+
+  async staleActiveCount(client = pool) {
+    const { rows } = await client.query(
+      `SELECT count(*)::int AS n FROM holds WHERE state = 'active' AND expires_at <= now()`,
+    );
+    return rows[0].n;
+  },
 };
 
 module.exports = holdRepository;

@@ -1,5 +1,5 @@
-// Map Postgres SQLSTATE -> what the client is allowed to see.
-// Driver errors must NEVER reach a client unrephrased.
+
+
 const PG_ERRORS = {
   '22P02': { status: 400, code: 'INVALID_INPUT' },
   '22001': { status: 400, code: 'VALUE_TOO_LONG' },
@@ -17,9 +17,8 @@ function httpError(status, code, message) {
   return err;
 }
 
-// Must be registered LAST, and must have exactly 4 parameters.
 function errorHandler(err, req, res, next) {
-  if (res.headersSent) return next(err); // never try to respond twice
+  if (res.headersSent) return next(err);
 
   let status = 500;
   let code = 'INTERNAL_ERROR';
@@ -30,18 +29,18 @@ function errorHandler(err, req, res, next) {
     code = 'INVALID_JSON';
     message = 'request body is not valid JSON';
   } else if (err.status) {
-    // one of ours
+
     status = err.status;
     code = err.code || 'ERROR';
     message = err.message;
   } else if (PG_ERRORS[err.code]) {
-    // straight from the driver
+
     ({ status, code } = PG_ERRORS[err.code]);
     message = 'the request could not be completed';
   }
 
   if (status >= 500) {
-    // full detail server-side only
+
     console.error(
       JSON.stringify({
         level: 'error',
